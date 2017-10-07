@@ -1,4 +1,4 @@
-# BiMPM: Bilateral Multi-Perspective Matching for Natural Language Sentences
+# Disease Data Matching via  Multi-Perspective Model
 
 ## Description
 This repository includes the source code for natural language sentence matching. 
