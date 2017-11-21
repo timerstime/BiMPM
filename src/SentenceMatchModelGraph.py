@@ -1,11 +1,11 @@
 import tensorflow as tf
 import my_rnn
 import match_utils
-
+from flip_gradient import flip_gradient
 
 class SentenceMatchModelGraph(object):
-    def __init__(self, num_classes, word_vocab=None, char_vocab=None, POS_vocab=None, NER_vocab=None,
-                 dropout_rate=0.5, learning_rate=0.001, optimize_type='adam',lambda_l2=1e-5, 
+    def __init__(self, num_classes, dom_classes, word_vocab=None, char_vocab=None, POS_vocab=None, NER_vocab=None,
+                 dropout_rate=0.5, learning_rate=0.001, optimize_type='adam',train_type='domain_adapt',lambda_l2=1e-5,
                  with_word=True, with_char=True, with_POS=True, with_NER=True, 
                  char_lstm_dim=20, context_lstm_dim=100, aggregation_lstm_dim=200, is_training=True,filter_layer_threshold=0.2,
                  MP_dim=50, context_layer_num=1,aggregation_layer_num=1, fix_word_vec=False,with_filter_layer=True, with_highway=False,
@@ -15,11 +15,13 @@ class SentenceMatchModelGraph(object):
                  with_full_match=True, with_maxpool_match=True, with_attentive_match=True, with_max_attentive_match=True):
 
         # ======word representation layer======
+
         in_question_repres = []
         in_passage_repres = []
         self.question_lengths = tf.placeholder(tf.int32, [None])
         self.passage_lengths = tf.placeholder(tf.int32, [None])
         self.truth = tf.placeholder(tf.int32, [None]) # [batch_size]
+        self.truth_d = tf.placeholder(tf.int32, [None])
         input_dim = 0
         if with_word and word_vocab is not None: 
             self.in_question_words = tf.placeholder(tf.int32, [None, None]) # [batch_size, question_len]
@@ -160,6 +162,32 @@ class SentenceMatchModelGraph(object):
                         with_full_match, with_maxpool_match, with_attentive_match, with_max_attentive_match,
                         with_left_match, with_right_match)
 
+
+        #========Discrimination Layer=====
+        match_representation_flipped=flip_gradient(match_representation,)
+        wd_0 = tf.get_variable("wd_0", [match_dim, match_dim / 2], dtype=tf.float32)
+        bd_0 = tf.get_variable("bd_0", [match_dim / 2], dtype=tf.float32)
+        wd_1 = tf.get_variable("wd_1", [match_dim / 2, dom_classes], dtype=tf.float32)
+        bd_1 = tf.get_variable("bd_1", [dom_classes], dtype=tf.float32)
+        logits_d = tf.matmul(match_representation, wd_0) + bd_0
+        logits_d = tf.tanh(logits_d)
+        if is_training:
+            logits_d = tf.nn.dropout(logits_d, (1 - dropout_rate))
+        else:
+            logits_d = tf.mul(logits_d, (1 - dropout_rate))
+        logits_d = tf.matmul(logits_d, wd_1) + bd_1
+        self.prob_d = tf.nn.softmax(logits_d)
+
+        #         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, tf.cast(self.truth, tf.int64), name='cross_entropy_per_example')
+        #         self.loss = tf.reduce_mean(cross_entropy, name='cross_entropy')
+
+        gold_matrix_d = tf.one_hot(self.truth_d, dom_classes, dtype=tf.float32)
+        #         gold_matrix = tf.one_hot(self.truth_d, num_classes)
+        self.loss_d = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits_d, gold_matrix_d))
+
+        correct_d = tf.nn.in_top_k(logits_d, self.truth_d, 1)
+        self.eval_correct_d = tf.reduce_sum(tf.cast(correct_d, tf.int32))
+        self.predictions_d = tf.arg_max(self.prob_d, 1)
         #========Prediction Layer=========
         w_0 = tf.get_variable("w_0", [match_dim, match_dim/2], dtype=tf.float32)
         b_0 = tf.get_variable("b_0", [match_dim/2], dtype=tf.float32)
@@ -181,11 +209,24 @@ class SentenceMatchModelGraph(object):
 
         gold_matrix = tf.one_hot(self.truth, num_classes, dtype=tf.float32)
 #         gold_matrix = tf.one_hot(self.truth, num_classes)
-        self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits, gold_matrix))
+        self.loss_p = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits, gold_matrix))
 
         correct = tf.nn.in_top_k(logits, self.truth, 1)
         self.eval_correct = tf.reduce_sum(tf.cast(correct, tf.int32))
         self.predictions = tf.arg_max(self.prob, 1)
+
+        self.loss_total = tf.add(self.loss_p,self.loss_d)
+
+        train_dict = {'pred_train': self.loss_p,'domain_train':self.loss_d,'domain_adapt':self.loss}
+
+
+
+        if is_training:
+            self.loss = train_dict[train_type]
+        else:
+            self.loss = self.loss_p
+
+
 
         if optimize_type == 'adadelta':
             clipper = 50 

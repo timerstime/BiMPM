@@ -15,7 +15,7 @@ class Vocab(object):
         elif fileformat == 'txt2':
             self.fromText_format2(vec_path,voc=voc,pre_word_vecs=word_vecs)
         elif fileformat == 'txt3':
-            self.fromText_format3(vec_path,voc=voc)
+            self.fromText_format3(vec_path,voc=voc) #voc is a bonus restriction vocabulary, here we do not use it here
         elif fileformat == 'map':
             self.fromMap(word2id, word_vecs, word_dim=dim)
         else: # build a vocabulary with a word set
@@ -92,7 +92,7 @@ class Vocab(object):
         self.id2word = {}
         
         vec_file = open(vec_path, 'rt')
-        word_vecs = {}
+        word_vecs = {}         # a dict for temporary saving the array of all word vectors, afterwards vectors are
         for line in vec_file:
             line = line.decode('utf-8').strip()
             parts = line.split('\t')
@@ -117,13 +117,13 @@ class Vocab(object):
 
     def fromText_format3(self, vec_path,voc=None):
         # load freq table and build index for each word
-        self.word2id = {}
+        self.word2id = {}   #they are dicts
         self.id2word = {}
         
         vec_file = open(vec_path, 'rt')
 #         header = vec_file.readline()
 #         self.vocab_size, self.word_dim = map(int, header.split())
-        word_vecs = {}
+        word_vecs = {}      # np.array used to save the word vector representations
         for line in vec_file:
             line = line.decode('utf-8').strip()
             parts = line.split(' ')
@@ -133,10 +133,13 @@ class Vocab(object):
             vector = np.array(parts[1:], dtype='float32')
             cur_index = len(self.word2id)
             self.word2id[word] = cur_index 
-            self.id2word[cur_index] = word
+            self.id2word[cur_index] = word    #bidirectional indices
             word_vecs[cur_index] = vector
-        vec_file.close()
+        vec_file.close()   #all of the (id,word) mappings and vector reprs are got from this file
 
+
+
+        ### save something in the file as python objects
         self.vocab_size = len(self.word2id)
         self.word_vecs = np.zeros((self.vocab_size+1, self.word_dim), dtype=np.float32) # the last dimension is all zero
         for cur_index in xrange(self.vocab_size):

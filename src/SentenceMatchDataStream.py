@@ -3,7 +3,7 @@ import re
 
 def make_batches(size, batch_size):
     nb_batch = int(np.ceil(size/float(batch_size)))
-    return [(i*batch_size, min(size, (i+1)*batch_size)) for i in range(0, nb_batch)] # zgwang: starting point of each batch
+    return [(i*batch_size, min(size, (i+1)*batch_size)) for i in range(0, nb_batch)] # zgwang: starting and end points of each batch
 
 def pad_2d_matrix(in_val, max_length=None, dtype=np.int32):
     if max_length is None: max_length = np.max([len(cur_in_val) for cur_in_val in in_val])
@@ -34,7 +34,7 @@ def pad_3d_tensor(in_val, max_length1=None, max_length2=None, dtype=np.int32):
 
 
 class SentenceMatchDataStream(object):
-    def __init__(self, inpath, word_vocab=None, char_vocab=None, POS_vocab=None, NER_vocab=None, label_vocab=None, batch_size=60, 
+    def __init__(self, inpath, word_vocab=None, char_vocab=None, POS_vocab=None, NER_vocab=None, label_vocab=None, label_d_vocab=None, batch_size=60,
                  isShuffle=False, isLoop=False, isSort=True, max_char_per_word=10, max_sent_length=200):
         instances = []
         infile = open(inpath, 'rt')
@@ -55,7 +55,7 @@ class SentenceMatchDataStream(object):
             char_matrix_idx_1 = char_vocab.to_character_matrix(sentence1)
             char_matrix_idx_2 = char_vocab.to_character_matrix(sentence2)
             if len(word_idx_1)>max_sent_length: 
-                word_idx_1 = word_idx_1[:max_sent_length]
+                word_idx_1 = word_idx_1[:max_sent_length]          #force the maximum length of the idx sentence by truncating directly
                 char_matrix_idx_1 = char_matrix_idx_1[:max_sent_length]
             if len(word_idx_2)>max_sent_length:
                 word_idx_2 = word_idx_2[:max_sent_length]
@@ -80,6 +80,7 @@ class SentenceMatchDataStream(object):
 
             instances.append((label, sentence1, sentence2, label_id, word_idx_1, word_idx_2, char_matrix_idx_1, char_matrix_idx_2,
                               POS_idx_1, POS_idx_2, NER_idx_1, NER_idx_2))
+            #add indexed elements to the target list "instances"
         infile.close()
 
         # sort instances based on sentence length
@@ -145,7 +146,7 @@ class SentenceMatchDataStream(object):
             max_sent1_length = np.max(sent1_length_batch)
             max_sent2_length = np.max(sent2_length_batch)
 
-            max_char_length1 = np.max([np.max(aa) for aa in sent1_char_length_batch])
+            max_char_length1 = np.max([np.max(aa) for aa in sent1_char_length_batch])  #first select the max char length in a sentence, then in a batch
             if max_char_length1>max_char_per_word: max_char_length1=max_char_per_word
 
             max_char_length2 = np.max([np.max(aa) for aa in sent2_char_length_batch])
